@@ -1,0 +1,6 @@
+# 認証情報 (GitHub Secrets経由で管理)
+test
+.threads-env
+
+# GitHub Actionsワークフロー (workflows権限がないためgit管理外; GitHubのWebUIから手動追加)
+.github/
