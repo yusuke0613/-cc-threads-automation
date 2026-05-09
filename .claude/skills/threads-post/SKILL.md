@@ -12,10 +12,9 @@ description: Threadsでバズる投稿のリサーチから本文生成、投稿
 
 ## 環境変数
 
-実行前に必ず読み込む:
-`source ~/.threads-env`
+データディレクトリは `$THREADS_BOT_DIR` で参照する (デフォルト: `<リポジトリルート>/threads-bot`)。スクリプト/SKILL内のパス記述はこの変数経由で統一。
 
-データディレクトリは `$THREADS_BOT_DIR` で参照する (デフォルト: `/Users/satouyuusuke/Library/Mobile Documents/com~apple~CloudDocs/cc/threads-automation/threads-bot`)。スクリプト/SKILL内のパス記述はこの変数経由で統一。
+**認証情報の管理方針**: `~/.threads-env` は GitHub Actions 上でのみ生成される。Claude Code on web セッションでは直接 API 呼び出しを行わず、draft を commit & push して GitHub Actions に投稿を委譲する。
 
 ## ワークフロー: 4つのモード
 
@@ -38,8 +37,20 @@ description: Threadsでバズる投稿のリサーチから本文生成、投稿
 ### モード3: 投稿実行
 
 ユーザーが下書きを見て「これで投稿して」「OK」と言ったら起動。
-→ `bash ~/.claude/skills/threads-post/scripts/post-text.sh <下書きファイルパス>`
-→ 成功したら下書きファイルは $THREADS_BOT_DIR/posted/ に移動
+
+**Claude Code on web の場合 (通常運用)**:
+1. 下書きファイルを git add & commit & push する
+2. GitHub Actions が自動検知して Threads に投稿 (secrets は Actions 側で安全に管理)
+3. Actions 完了後、posted/ への移動とログ記録も Actions が行う
+
+```bash
+cd <リポジトリルート>
+git add threads-bot/drafts/<ファイル名>
+git commit -m "draft: <タイトル>"
+git push -u origin <現在のブランチ>
+```
+
+push 後に GitHub Actions の実行状況をユーザーに伝える。
 
 ### モード4: トークン管理
 
