@@ -1,10 +1,16 @@
 name: Threads投稿
 
 on:
+  push:
+    branches:
+      - main
+      - claude/**
+    paths:
+      - 'threads-bot/drafts/**.md'
   workflow_dispatch:
     inputs:
       draft_file:
-        description: '投稿する下書きファイルパス (threads-bot/drafts/ 以下)'
+        description: '投稿する下書きファイルパス (例: threads-bot/drafts/2026-05-09-1301-社内SE.md)'
         required: true
         type: string
 
@@ -16,37 +22,64 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: 投稿対象ファイルを特定
+        id: find
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "files=${{ github.event.inputs.draft_file }}" >> $GITHUB_OUTPUT
+          else
+            FILES=$(git diff --name-only --diff-filter=A HEAD~1 HEAD \
+              | grep '^threads-bot/drafts/.*\.md$' \
+              | tr '\n' ' ')
+            echo "files=$FILES" >> $GITHUB_OUTPUT
+            echo "検出された新規下書き: $FILES"
+          fi
+
+      - name: 対象ファイルなし → スキップ
+        if: steps.find.outputs.files == ''
+        run: echo "新規下書きファイルが見つかりません。スキップします。"
 
       - name: ~/.threads-env を生成
+        if: steps.find.outputs.files != ''
+        env:
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+          THREADS_APP_ID: ${{ secrets.THREADS_APP_ID }}
+          THREADS_APP_SECRET: ${{ secrets.THREADS_APP_SECRET }}
+          THREADS_TOKEN_ISSUED_AT: ${{ secrets.THREADS_TOKEN_ISSUED_AT }}
         run: |
-          cat > ~/.threads-env << 'ENVEOF'
-          export THREADS_ACCESS_TOKEN="${{ secrets.THREADS_ACCESS_TOKEN }}"
-          export THREADS_USER_ID="${{ secrets.THREADS_USER_ID }}"
-          export THREADS_APP_ID="${{ secrets.THREADS_APP_ID }}"
-          export THREADS_APP_SECRET="${{ secrets.THREADS_APP_SECRET }}"
-          export THREADS_TOKEN_ISSUED_AT="${{ secrets.THREADS_TOKEN_ISSUED_AT }}"
-          export THREADS_BOT_DIR="$GITHUB_WORKSPACE/threads-bot"
-          ENVEOF
+          cat > ~/.threads-env << EOF
+          export THREADS_ACCESS_TOKEN="${THREADS_ACCESS_TOKEN}"
+          export THREADS_USER_ID="${THREADS_USER_ID}"
+          export THREADS_APP_ID="${THREADS_APP_ID}"
+          export THREADS_APP_SECRET="${THREADS_APP_SECRET}"
+          export THREADS_TOKEN_ISSUED_AT="${THREADS_TOKEN_ISSUED_AT}"
+          export THREADS_BOT_DIR="${GITHUB_WORKSPACE}/threads-bot"
+          EOF
           chmod 600 ~/.threads-env
 
-      - name: 依存ツール確認
-        run: |
-          jq --version
-          curl --version | head -1
-
       - name: トークン確認
+        if: steps.find.outputs.files != ''
         run: bash .claude/skills/threads-post/scripts/check-token.sh
 
       - name: Threads投稿
+        if: steps.find.outputs.files != ''
         run: |
           source ~/.threads-env
-          bash .claude/skills/threads-post/scripts/post-text.sh \
-            "$GITHUB_WORKSPACE/${{ github.event.inputs.draft_file }}"
+          for DRAFT in ${{ steps.find.outputs.files }}; do
+            bash .claude/skills/threads-post/scripts/post-text.sh \
+              "${GITHUB_WORKSPACE}/${DRAFT}"
+          done
 
-      - name: 投稿済みファイルをコミット
+      - name: 投稿済みファイル・ログをコミット
+        if: steps.find.outputs.files != ''
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add threads-bot/posted/ threads-bot/logs/
-          git diff --staged --quiet || git commit -m "post: ${{ github.event.inputs.draft_file }}"
+          git diff --staged --quiet || \
+            git commit -m "post: $(echo '${{ steps.find.outputs.files }}' | xargs basename | tr '\n' ' ') [skip ci]"
           git push
