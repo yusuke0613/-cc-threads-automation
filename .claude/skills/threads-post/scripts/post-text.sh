@@ -46,16 +46,19 @@ echo ""
 
 # Step 1: コンテナ作成
 echo "📝 コンテナ作成中..."
-RES=$(curl -s -X POST \
+HTTP_STATUS=$(curl -sS -o /tmp/threads_create_res.json -w "%{http_code}" -X POST \
   "https://graph.threads.net/v1.0/${THREADS_USER_ID}/threads" \
   -d "media_type=TEXT" \
   --data-urlencode "text=${POST_TEXT}" \
-  -d "access_token=${THREADS_ACCESS_TOKEN}")
+  -d "access_token=${THREADS_ACCESS_TOKEN}" 2>/tmp/threads_create_err.log) || true
+RES=$(cat /tmp/threads_create_res.json 2>/dev/null)
 
-CREATION_ID=$(echo "$RES" | jq -r '.id // empty')
+CREATION_ID=$(echo "$RES" | jq -r '.id // empty' 2>/dev/null)
 
 if [ -z "$CREATION_ID" ]; then
   echo "❌ コンテナ作成失敗"
+  echo "HTTP Status: ${HTTP_STATUS:-<curl failed to connect>}"
+  echo "curl stderr: $(cat /tmp/threads_create_err.log 2>/dev/null)"
   echo "Response: $RES"
   mkdir -p "$THREADS_BOT_DIR/logs"
   echo "{\"timestamp\":\"$(date -Iseconds)\",\"phase\":\"create\",\"error\":$RES}" >> "$THREADS_BOT_DIR/logs/errors.jsonl"
